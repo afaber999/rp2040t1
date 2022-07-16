@@ -4,12 +4,12 @@
 #![no_std]
 #![no_main]
 
-use bsp::entry;
-use defmt::*;
+use bsp::{entry, hal::{usb::UsbBus, Timer}};
 use defmt_rtt as _;
 use embedded_hal::digital::v2::OutputPin;
-use embedded_time::fixed_point::FixedPoint;
 use panic_probe as _;
+use embedded_hal::timer::CountDown as _;
+use embedded_time::duration::Extensions as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
@@ -22,10 +22,11 @@ use bsp::hal::{
     sio::Sio,
     watchdog::Watchdog,
 };
+use usb_device::{device::{UsbDeviceBuilder, UsbVidPid}, class_prelude::UsbBusAllocator};
+use usbd_serial::{SerialPort, USB_CLASS_CDC};
 
 #[entry]
 fn main() -> ! {
-    info!("Program start");
     let mut pac = pac::Peripherals::take().unwrap();
     let core = pac::CorePeripherals::take().unwrap();
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
@@ -45,7 +46,10 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().integer());
+    //let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().integer());
+
+    let timer = Timer::new(pac.TIMER, &mut pac.RESETS);
+    let mut delay = timer.count_down();
 
     let pins = bsp::Pins::new(
         pac.IO_BANK0,
@@ -56,14 +60,45 @@ fn main() -> ! {
 
     let mut led_pin = pins.led.into_push_pull_output();
 
+    let mut lwait = 500;
+
+ 
+    let usb_bus = UsbBusAllocator::new(UsbBus::new(
+        pac.USBCTRL_REGS,
+        pac.USBCTRL_DPRAM,
+        clocks.usb_clock,
+        true,
+        &mut pac.RESETS,
+    ));
+
+    let mut serial = SerialPort::new(&usb_bus);
+    let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
+        .product("Serial port")
+        .device_class(USB_CLASS_CDC)
+        .build();
+   
+
+    let mut delay_ms = |ms :u32, serial : &mut SerialPort<UsbBus> | {    
+
+        delay.start(ms.milliseconds());
+        loop {
+            match delay.wait() {
+                Err(nb::Error::Other(e)) => break Err(e),
+                Err(nb::Error::WouldBlock) => {
+                    let _ = usb_dev.poll(&mut [serial]);
+                }, 
+                Ok(x) => break Ok(x),       
+            }
+        }
+    };
+   
     loop {
-        info!("on!");
         led_pin.set_high().unwrap();
-        delay.delay_ms(500);
-        info!("off!");
+        delay_ms(500, &mut serial);
         led_pin.set_low().unwrap();
-        delay.delay_ms(500);
+        delay_ms(lwait, &mut serial);
+        lwait += 200;
+        serial.write(b"Hello from Rust!!\n");
+
     }
 }
-
-// End of file

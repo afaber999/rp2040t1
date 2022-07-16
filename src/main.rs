@@ -17,7 +17,8 @@ use rp_pico as bsp;
 // use sparkfun_pro_micro_rp2040 as bsp;
 
 use bsp::hal::{
-    clocks::{init_clocks_and_plls, Clock},
+//    clocks::{init_clocks_and_plls, Clock},
+    clocks::{init_clocks_and_plls},
     pac,
     sio::Sio,
     watchdog::Watchdog,
@@ -28,7 +29,7 @@ use usbd_serial::{SerialPort, USB_CLASS_CDC};
 #[entry]
 fn main() -> ! {
     let mut pac = pac::Peripherals::take().unwrap();
-    let core = pac::CorePeripherals::take().unwrap();
+    //let core = pac::CorePeripherals::take().unwrap();
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
     let sio = Sio::new(pac.SIO);
 
@@ -81,7 +82,7 @@ fn main() -> ! {
     let mut delay_ms = |ms :u32, serial : &mut SerialPort<UsbBus> | {    
 
         delay.start(ms.milliseconds());
-        loop {
+        let _ = loop {
             match delay.wait() {
                 Err(nb::Error::Other(e)) => break Err(e),
                 Err(nb::Error::WouldBlock) => {
@@ -89,7 +90,7 @@ fn main() -> ! {
                 }, 
                 Ok(x) => break Ok(x),       
             }
-        }
+        };
     };
    
     loop {
@@ -98,7 +99,7 @@ fn main() -> ! {
         led_pin.set_low().unwrap();
         delay_ms(lwait, &mut serial);
         lwait += 200;
-        serial.write(b"Hello from Rust!!\n");
+        serial.write(b"Hello from Rust!!\n").unwrap();
 
     }
 }
